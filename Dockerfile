@@ -9,11 +9,11 @@ POSTFIXADMIN_SETUP_PASSWORD=ChangeMe000!
 ROUNDCUBEMAIL_DB_USER=admin
 ROUNDCUBEMAIL_DB_PASSWORD=ChangeMe000!
 # These ain't secrets:
-DOMAIN1=lung.se
-DOMAIN2=exsol.es
-MAIL_DOMAIN=mail.lung.se
-ADMIN_DOMAIN=admin.lung.se
-WEBMAIL_DOMAIN=webmail.lung.se
+DOMAIN1=example1.com
+DOMAIN2=example2.com
+MAIL_DOMAIN=mail.example1.com
+ADMIN_DOMAIN=admin.example1.com
+WEBMAIL_DOMAIN=webmail.example1.com
 # Versions and URLs
 POSTFIXADMIN_VERSION=postfixadmin-3.3.10
 POSTFIXADMIN_URL=https://github.com/postfixadmin/postfixadmin/archive/${POSTFIXADMIN_VERSION}.tar.gz
