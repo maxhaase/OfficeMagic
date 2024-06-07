@@ -42,13 +42,8 @@ COPY provision_server.sh /usr/local/bin/provision_server.sh
 # Make the script executable
 RUN chmod +x /usr/local/bin/provision_server.sh
 
-# Expose ports for HTTP and HTTPS
-EXPOSE 80 443
+# Expose ports for HTTP, HTTPS, and mail protocols
+EXPOSE 80 443 25 465 587 110 995 143 993
 
 # Start services and run provisioning script
-CMD service apache2 start && \
-    service mariadb start && \
-    service postfix start && \
-    service dovecot start && \
-    /usr/local/bin/provision_server.sh && \
-    tail -f /dev/null
+CMD /usr/local/bin/provision_server.sh
