@@ -54,6 +54,13 @@ sed -i "s/^\(\$config\['db_dsnw'\] = \).*/\1'mysql:\/\/$ROUNDCUBEMAIL_DB_USER:$R
 sed -i "s/^\(\$config\['default_host'\] = \).*/\1'localhost';/" config/config.inc.php
 sed -i "s/^\(\$config\['smtp_server'\] = \).*/\1'localhost';/" config/config.inc.php
 
+# Set up WordPress
+echo "Setting up WordPress..."
+wget https://wordpress.org/latest.tar.gz
+tar xzf latest.tar.gz
+mv wordpress /var/www/html/
+chown -R www-data:www-data /var/www/html/wordpress
+
 # Set up Apache virtual hosts
 echo "Setting up Apache virtual hosts..."
 cat <<EOF > /etc/apache2/sites-available/000-default.conf
@@ -71,6 +78,12 @@ cat <<EOF > /etc/apache2/sites-available/000-default.conf
     </Directory>
 
     <Directory /var/www/postfixadmin>
+        Options +FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    <Directory /var/www/html/wordpress>
         Options +FollowSymLinks
         AllowOverride All
         Require all granted
@@ -94,3 +107,4 @@ service dovecot start
 echo "Provisioning completed successfully!"
 echo "Access PostfixAdmin at http://$DOMAIN1/postfixadmin"
 echo "Access Roundcube at http://$DOMAIN1/roundcube"
+echo "Access WordPress at http://$DOMAIN1/wordpress"
