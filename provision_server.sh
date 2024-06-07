@@ -1,110 +1,77 @@
 #!/bin/bash
-#######################################
-# provision_server.sh
-# Script to provision the mail server
-# Author: maxhaase@gmail.com
-#######################################
 
-# Source environment variables
-set -o allexport; source /tmp/vars.env; set +o allexport
+# Load variables from vars.env
+source vars.env
 
-# Check if required environment variables are set
-if [[ -z "${MYSQL_ROOT_PASSWORD}" || -z "${MYSQL_USER}" || -z "${MYSQL_PASSWORD}" || -z "${WORDPRESS_DB_USER}" || -z "${WORDPRESS_DB_PASSWORD}" || -z "${POSTFIXADMIN_SETUP_PASSWORD}" || -z "${ROUNDCUBEMAIL_DB_USER}" || -z "${ROUNDCUBEMAIL_DB_PASSWORD}" || -z "${DOMAIN1}" || -z "${MAIL_DOMAIN}" || -z "${ADMIN_DOMAIN}" || -z "${WEBMAIL_DOMAIN}" ]]; then
-  echo "Error: Required environment variables are not set."
-  exit 1
+# Function to set up Let's Encrypt for a domain
+setup_letsencrypt() {
+  local domain=$1
+  echo "Setting up Let's Encrypt for $domain"
+  sudo certbot certonly --standalone -d $domain --non-interactive --agree-tos --email admin@$domain
+}
+
+# Function to set up WordPress with Let's Encrypt
+setup_wordpress() {
+  local domain=$1
+  echo "Setting up WordPress for $domain"
+
+  # Assuming Docker and docker-compose are used
+  cat > docker-compose-$domain.yml <<EOL
+version: '3.7'
+
+services:
+  wordpress:
+    image: wordpress:latest
+    container_name: wordpress_$domain
+    environment:
+      WORDPRESS_DB_HOST: db_$domain
+      WORDPRESS_DB_USER: $WORDPRESS_DB_USER
+      WORDPRESS_DB_PASSWORD: $WORDPRESS_DB_PASSWORD
+      WORDPRESS_DB_NAME: wordpress_$domain
+    volumes:
+      - ./wordpress_$domain:/var/www/html
+    ports:
+      - "80:80"
+    networks:
+      - wpnet_$domain
+
+  db:
+    image: mysql:5.7
+    container_name: db_$domain
+    environment:
+      MYSQL_DATABASE: wordpress_$domain
+      MYSQL_USER: $WORDPRESS_DB_USER
+      MYSQL_PASSWORD: $WORDPRESS_DB_PASSWORD
+      MYSQL_ROOT_PASSWORD: $MYSQL_ROOT_PASSWORD
+    volumes:
+      - db_data_$domain:/var/lib/mysql
+    networks:
+      - wpnet_$domain
+
+networks:
+  wpnet_$domain:
+volumes:
+  db_data_$domain:
+EOL
+
+  # Start the containers
+  docker-compose -f docker-compose-$domain.yml up -d
+
+  # Set up Let's Encrypt
+  setup_letsencrypt $domain
+}
+
+# Provision the server for DOMAIN1
+setup_wordpress $DOMAIN1
+
+# Provision the server for DOMAIN2 if defined
+if [ -n "$DOMAIN2" ]; then
+  setup_wordpress $DOMAIN2
 fi
 
-# Set up MariaDB
-echo "Setting up MariaDB..."
-service mariadb start
-mysqladmin -u root password "$MYSQL_ROOT_PASSWORD"
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE $MYSQL_DATABASE;"
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "CREATE USER '$MYSQL_USER'@'localhost' IDENTIFIED BY '$MYSQL_PASSWORD';"
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON $MYSQL_DATABASE.* TO '$MYSQL_USER'@'localhost';"
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH PRIVILEGES;"
-
-# Set up PostfixAdmin
-echo "Setting up PostfixAdmin..."
-cd /var/www/
-wget https://github.com/postfixadmin/postfixadmin/archive/postfixadmin-3.3.10.tar.gz
-tar xzf postfixadmin-3.3.10.tar.gz
-mv postfixadmin-postfixadmin-3.3.10 /var/www/postfixadmin
-chown -R www-data:www-data /var/www/postfixadmin
-cd /var/www/postfixadmin
-cp config.inc.php config.local.php
-
-sed -i "s/^\(\$CONF\['configured'\] = \).*/\1true;/" config.local.php
-sed -i "s/^\(\$CONF\['database_type'\] = \).*/\1'mysqli';/" config.local.php
-sed -i "s/^\(\$CONF\['database_host'\] = \).*/\1'localhost';/" config.local.php
-sed -i "s/^\(\$CONF\['database_user'\] = \).*/\1'$MYSQL_USER';/" config.local.php
-sed -i "s/^\(\$CONF\['database_password'\] = \).*/\1'$MYSQL_PASSWORD';/" config.local.php
-sed -i "s/^\(\$CONF\['database_name'\] = \).*/\1'$MYSQL_DATABASE';/" config.local.php
-
-# Set up Roundcube
-echo "Setting up Roundcube..."
-cd /var/www/
-wget https://github.com/roundcube/roundcubemail/releases/download/1.5.0/roundcubemail-1.5.0-complete.tar.gz
-tar xzf roundcubemail-1.5.0-complete.tar.gz
-mv roundcubemail-1.5.0 /var/www/roundcube
-chown -R www-data:www-data /var/www/roundcube
-cd /var/www/roundcube
-cp config/config.inc.php.sample config/config.inc.php
-
-sed -i "s/^\(\$config\['db_dsnw'\] = \).*/\1'mysql:\/\/$ROUNDCUBEMAIL_DB_USER:$ROUNDCUBEMAIL_DB_PASSWORD@localhost\/$MYSQL_DATABASE';/" config/config.inc.php
-sed -i "s/^\(\$config\['default_host'\] = \).*/\1'localhost';/" config/config.inc.php
-sed -i "s/^\(\$config\['smtp_server'\] = \).*/\1'localhost';/" config/config.inc.php
-
-# Set up WordPress
-echo "Setting up WordPress..."
-wget https://wordpress.org/latest.tar.gz
-tar xzf latest.tar.gz
-mv wordpress /var/www/html/
-chown -R www-data:www-data /var/www/html/wordpress
-
-# Set up Apache virtual hosts
-echo "Setting up Apache virtual hosts..."
-cat <<EOF > /etc/apache2/sites-available/000-default.conf
-<VirtualHost *:80>
-    ServerAdmin webmaster@localhost
-    DocumentRoot /var/www/html
-
-    Alias /roundcube /var/www/roundcube
-    Alias /postfixadmin /var/www/postfixadmin
-
-    <Directory /var/www/roundcube>
-        Options +FollowSymLinks
-        AllowOverride All
-        Require all granted
-    </Directory>
-
-    <Directory /var/www/postfixadmin>
-        Options +FollowSymLinks
-        AllowOverride All
-        Require all granted
-    </Directory>
-
-    <Directory /var/www/html/wordpress>
-        Options +FollowSymLinks
-        AllowOverride All
-        Require all granted
-    </Directory>
-</VirtualHost>
-EOF
-
-a2enmod rewrite
-a2ensite 000-default
-service apache2 reload
-
-# Obtain SSL certificates
-echo "Obtaining SSL certificates..."
-certbot --apache -d $DOMAIN1 -d $MAIL_DOMAIN -d $ADMIN_DOMAIN -d $WEBMAIL_DOMAIN --agree-tos --non-interactive -m $EMAIL
-
-# Start services
-service postfix start
-service dovecot start
-
-# Finalize setup
-echo "Provisioning completed successfully!"
-echo "Access PostfixAdmin at http://$DOMAIN1/postfixadmin"
-echo "Access Roundcube at http://$DOMAIN1/roundcube"
-echo "Access WordPress at http://$DOMAIN1/wordpress"
+# Display access information
+echo "WordPress setup completed. Access your services at:"
+echo "http://$DOMAIN1 for DOMAIN1"
+if [ -n "$DOMAIN2" ]; then
+  echo "http://$DOMAIN2 for DOMAIN2"
+fi
