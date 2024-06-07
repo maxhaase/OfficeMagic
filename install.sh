@@ -1,39 +1,66 @@
 #!/bin/bash
-#######################################
-# install.sh
-# Script to install Docker and Docker Compose, build Docker image, and run container
-# Author: maxhaase@gmail.com
-#######################################
 
-# Check if Docker is installed
-if ! command -v docker &> /dev/null; then
-    echo "Docker not found, installing..."
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sh get-docker.sh
-else
-    echo "Docker is already installed."
+# Load variables from vars.env
+source vars.env
+
+# Function to set up WordPress
+setup_wordpress() {
+  local domain=$1
+  echo "Setting up WordPress for $domain"
+
+  # Assuming Docker and docker-compose are used
+  cat > docker-compose-$domain.yml <<EOL
+version: '3.7'
+
+services:
+  wordpress:
+    image: wordpress:latest
+    container_name: wordpress_$domain
+    environment:
+      WORDPRESS_DB_HOST: db_$domain
+      WORDPRESS_DB_USER: $WORDPRESS_DB_USER
+      WORDPRESS_DB_PASSWORD: $WORDPRESS_DB_PASSWORD
+      WORDPRESS_DB_NAME: wordpress_$domain
+    volumes:
+      - ./wordpress_$domain:/var/www/html
+    ports:
+      - "80:80"
+    networks:
+      - wpnet_$domain
+
+  db:
+    image: mysql:5.7
+    container_name: db_$domain
+    environment:
+      MYSQL_DATABASE: wordpress_$domain
+      MYSQL_USER: $WORDPRESS_DB_USER
+      MYSQL_PASSWORD: $WORDPRESS_DB_PASSWORD
+      MYSQL_ROOT_PASSWORD: $MYSQL_ROOT_PASSWORD
+    volumes:
+      - db_data_$domain:/var/lib/mysql
+    networks:
+      - wpnet_$domain
+
+networks:
+  wpnet_$domain:
+volumes:
+  db_data_$domain:
+EOL
+
+  # Start the containers
+  docker-compose -f docker-compose-$domain.yml up -d
+}
+
+# Set up WordPress for DOMAIN1
+setup_wordpress $DOMAIN1
+
+# Set up WordPress for DOMAIN2 if defined
+if [ -n "$DOMAIN2" ]; then
+  setup_wordpress $DOMAIN2
 fi
 
-# Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null; then
-    echo "Docker Compose not found, installing..."
-    curl -L "https://github.com/docker/compose/releases/download/v2.27.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
-else
-    echo "Docker Compose is already installed."
+echo "WordPress setup completed. Access your services at:"
+echo "http://$DOMAIN1 for DOMAIN1"
+if [ -n "$DOMAIN2" ]; then
+  echo "http://$DOMAIN2 for DOMAIN2"
 fi
-
-# Verify Docker installation
-docker --version
-docker-compose --version
-
-# Prompt for Docker image name
-read -p "Enter the Docker image name you want to build (e.g., my_image_name): " IMAGE_NAME
-
-# Build the Docker image with increased verbosity
-docker build --progress=plain --no-cache -t $IMAGE_NAME .
-
-# Run the Docker container with environment variables sourced from the vars.env file
-docker run -d --name $IMAGE_NAME -p 80:80 -p 443:443 --env-file vars.env $IMAGE_NAME
-
-echo "Installation and setup completed successfully."
